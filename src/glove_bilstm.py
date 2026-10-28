@@ -27,26 +27,46 @@ _TOKEN_RE = re.compile(r"[a-z0-9']+|[^\sa-z0-9']")
 
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase words plus single punctuation marks, so negations and '!' survive."""
+    """Lowercase words plus single punctuation marks, so negations and '!' survive.
+
+    Example: tokenize("I did NOT like it!") -> ["i", "did", "not", "like", "it", "!"]
+    Apostrophes stay inside words: "don't" -> ["don't"] (GloVe splits it, so it has no GloVe vector).
+    """
     return _TOKEN_RE.findall(text.lower())
 
 
 def build_vocab(texts: list[str], min_freq: int = 2) -> dict[str, int]:
-    counts = Counter(tok for text in texts for tok in tokenize(text))
+    """Map each frequent word to an integer id. Ids 0 and 1 are reserved for padding and unknown words.
+
+    Example: build_vocab(["good good movie", "good film"], min_freq=2)
+             -> {"<pad>": 0, "<unk>": 1, "good": 2}   ("movie" and "film" occur once, so they are dropped)
+    Call it on TRAINING texts only, otherwise validation words leak into the vocabulary.
+    """
+    counts = Counter(tok for text in texts for tok in tokenize(text))  # word -> number of occurrences
     vocab = {PAD: 0, UNK: 1}
-    for tok, n in counts.most_common():
+    for tok, n in counts.most_common():  # most frequent words get the smallest ids
         if n >= min_freq:
-            vocab[tok] = len(vocab)
+            vocab[tok] = len(vocab)      # next free id
     return vocab
 
 
 def encode(text: str, vocab: dict[str, int], max_len: int) -> list[int]:
-    ids = [vocab.get(tok, vocab[UNK]) for tok in tokenize(text)][:max_len]
-    return ids + [vocab[PAD]] * (max_len - len(ids))
+    """Turn a review into exactly max_len ids: unknown words -> 1, cut if too long, pad with 0 if too short.
+
+    Example (vocab {"<pad>":0, "<unk>":1, "good":2, "movie":3}, max_len=5):
+        encode("good movie xyz", vocab, 5) -> [2, 3, 1, 0, 0]   # "xyz" is unknown, then two pads
+        encode("good " * 9, vocab, 5)      -> [2, 2, 2, 2, 2]   # truncated to 5
+    """
+    ids = [vocab.get(tok, vocab[UNK]) for tok in tokenize(text)][:max_len]  # lookup, then truncate
+    return ids + [vocab[PAD]] * (max_len - len(ids))                        # right-pad with 0
 
 
 def load_split(path: str) -> tuple[list[str], list[int]]:
-    """Load a labeled split; raises KeyError for an unlabeled one (e.g. the test split)."""
+    """Load a labeled split; raises KeyError for an unlabeled one (e.g. the test split).
+
+    Example: texts, labels = load_split("data/processed/val_split.json")
+             texts[0] -> "great boots, very comfortable", labels[0] -> 1   (1 = positive, 0 = negative)
+    """
     with open(path, "r", encoding="utf-8") as f:
         records = json.load(f)
     return [r["reviews"] for r in records], [int(r["sentiments"]) for r in records]
@@ -57,7 +77,10 @@ GLOVE_FILE = "glove.6B.100d.txt"
 
 
 def download_glove(dest_dir: str = "data/glove") -> str:
-    """Fetch GloVe 6B and extract only the 100d vectors; skipped if already present."""
+    """Fetch GloVe 6B and extract only the 100d vectors; skipped if already present.
+
+    Returns the path of glove.6B.100d.txt (about 347 MB; the 822 MB zip is deleted after extraction).
+    """
     path = os.path.join(dest_dir, GLOVE_FILE)
     if os.path.exists(path):
         return path
@@ -72,7 +95,10 @@ def download_glove(dest_dir: str = "data/glove") -> str:
 
 
 def load_glove(path: str, dim: int = 100) -> dict[str, np.ndarray]:
-    """Read a GloVe text file, skipping malformed lines and vectors of the wrong dimension."""
+    """Read a GloVe text file, skipping malformed lines and vectors of the wrong dimension.
+
+    Each line is "word n1 n2 ... n100". Example: glove["good"] -> array([-0.031, 0.120, 0.539, ...]) (100 floats)
+    """
     glove = {}
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
@@ -89,13 +115,18 @@ def load_glove(path: str, dim: int = 100) -> dict[str, np.ndarray]:
 def build_embedding_matrix(
     vocab: dict[str, int], glove: dict[str, np.ndarray], dim: int = 100, seed: int = 42
 ) -> np.ndarray:
-    """Rows follow vocab ids: GloVe vector if known, small random vector if not, zeros for <pad>."""
+    """Rows follow vocab ids: GloVe vector if known, small random vector if not, zeros for <pad>.
+
+    Example: with 7,066 vocabulary words the result has shape (7066, 100);
+             matrix[vocab["good"]] equals glove["good"], matrix[0] (the pad row) is all zeros.
+    """
     rng = np.random.default_rng(seed)
+    # Start every row as a small random vector (covers words GloVe lacks, e.g. "it's", and <unk>)...
     matrix = rng.normal(0.0, 0.1, size=(len(vocab), dim)).astype(np.float32)
     for tok, idx in vocab.items():
         if tok in glove:
-            matrix[idx] = glove[tok]
-    matrix[vocab[PAD]] = 0.0
+            matrix[idx] = glove[tok]   # ...then overwrite with the pretrained vector where one exists
+    matrix[vocab[PAD]] = 0.0           # padding carries no information
     return matrix
 
 
@@ -135,21 +166,31 @@ class BiLSTMClassifier(nn.Module):
 
     def forward(self, ids: torch.Tensor) -> torch.Tensor:
         seq_len = ids.shape[1]
-        lengths = (ids != 0).sum(dim=1).clamp(min=1)  # all-pad rows behave as length 1
+        # ids: (batch, seq_len). Real length of each review = number of non-pad ids,
+        # e.g. [5, 9, 2, 0, 0] -> 3. Rows that are all padding are treated as length 1 to avoid NaNs.
+        lengths = (ids != 0).sum(dim=1).clamp(min=1)
+        # mask[b, t] is True for real positions: lengths 3 and 5 with seq_len 5 ->
+        # [[T,T,T,F,F], [T,T,T,T,T]]. Pooling uses it so padding never influences the result.
         mask = torch.arange(seq_len, device=ids.device)[None, :] < lengths[:, None]
+        # Packing tells the LSTM to stop at each review's real end instead of reading the padding.
         packed = pack_padded_sequence(
             self.embedding(ids), lengths.cpu(), batch_first=True, enforce_sorted=False
         )
         packed_out, (h_n, _) = self.lstm(packed)
         out, _ = pad_packed_sequence(packed_out, batch_first=True, total_length=seq_len)
 
+        # out: (batch, seq_len, hidden * 2) = one state per word, each seeing context from both sides.
         if self.pooling == "attention":
+            # A learned score per word -> softmax -> weighted average, so sentiment-heavy words
+            # ("terrible", "love") count more than filler words. Padding gets -inf, i.e. weight 0.
             scores = self.attention(out).squeeze(-1).masked_fill(~mask, float("-inf"))
             pooled = (torch.softmax(scores, dim=1).unsqueeze(-1) * out).sum(dim=1)
         elif self.pooling == "max":
+            # Per feature, keep the largest value over the real words (padding set to -inf).
             pooled = out.masked_fill(~mask.unsqueeze(-1), float("-inf")).max(dim=1).values
         else:  # last real position of each direction
             pooled = torch.cat([h_n[-2], h_n[-1]], dim=1) if self.bidirectional else h_n[-1]
+        # pooled: (batch, hidden * 2) -> dropout (training only) -> linear -> (batch, 2) logits [negative, positive].
         return self.classifier(self.dropout(pooled))
 
 
@@ -172,7 +213,12 @@ def _pick_device(device: str | None) -> torch.device:
 
 
 def compute_metrics(y_true, y_pred, y_prob) -> dict:
-    """Positive class = 1. Negative F1 is the F1 of class 0; undefined scores count as 0."""
+    """Positive class = 1. Negative F1 is the F1 of class 0; undefined scores count as 0.
+
+    Example: compute_metrics([1,1,1,0], [1,1,1,1], [.9,.8,.7,.6]) -> accuracy 0.75, neg_f1 0.0
+             (predicting only "positive" never finds a negative review, so Negative F1 is 0).
+    confusion_matrix is [[tn, fp], [fn, tp]].
+    """
     y_true, y_pred, y_prob = np.asarray(y_true), np.asarray(y_pred), np.asarray(y_prob)
     return {
         "accuracy": float(accuracy_score(y_true, y_pred)),
@@ -187,7 +233,10 @@ def compute_metrics(y_true, y_pred, y_prob) -> dict:
 
 @torch.no_grad()
 def predict_proba(model, ids, batch_size: int = 256, device: str | None = None) -> np.ndarray:
-    """Positive-class probability for each encoded review."""
+    """Positive-class probability for each encoded review.
+
+    Example: predict_proba(model, X_val) -> array([0.97, 0.03, 0.88, ...]) with one value per review.
+    """
     dev = _pick_device(device)
     model.to(dev).eval()
     x = torch.as_tensor(ids, dtype=torch.long)
@@ -214,7 +263,16 @@ def train_model(
     seed: int = 42,
     device: str | None = None,
 ) -> dict:
-    """Train with AdamW; keep the weights with the best validation Negative F1."""
+    """Train with AdamW; keep the weights with the best validation Negative F1.
+
+    Each epoch: shuffle the training reviews, update the weights batch by batch (clipping gradients so
+    updates stay stable), then score the validation set. If validation Negative F1 has not improved for
+    `patience` epochs, stop and restore the best epoch's weights.
+    Example result: {"best_epoch": 8, "history": [{"epoch": 1, "train_loss": 0.45, ...}, ...],
+                     "metrics": {...}, "train_seconds": 417.0}
+    class_weighted=True weights each class by n / (2 * class_count), so the rare negative class
+    (about 15% of reviews) is penalised ~3x more per mistake than the positive class.
+    """
     set_seed(seed)
     dev = _pick_device(device)
     model.to(dev)
