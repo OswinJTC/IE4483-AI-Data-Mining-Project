@@ -1,0 +1,6 @@
+data/glove/
+results/
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+.superpowers/
