@@ -44,3 +44,46 @@ def test_load_split_without_labels_raises(tmp_path):
     p.write_text(json.dumps([{"reviews": "good"}]))
     with pytest.raises(KeyError):
         load_split(str(p))
+
+
+# ---- Task 2: GloVe and embedding matrix ----
+import numpy as np
+
+from src.glove_bilstm import build_embedding_matrix, load_glove
+
+
+def _tiny_glove(tmp_path):
+    p = tmp_path / "glove.txt"
+    p.write_text(
+        "good 1 2 3 4\n"
+        "bad -1 -2 -3 -4\n"
+        "broken line without numbers\n"
+        "short 1 2 3\n",
+        encoding="utf-8",
+    )
+    return str(p)
+
+
+def test_load_glove_skips_malformed_and_wrong_dim(tmp_path):
+    glove = load_glove(_tiny_glove(tmp_path), dim=4)
+    assert set(glove) == {"good", "bad"}
+    assert glove["good"].shape == (4,)
+
+
+def test_embedding_matrix_rows(tmp_path):
+    glove = load_glove(_tiny_glove(tmp_path), dim=4)
+    vocab = {"<pad>": 0, "<unk>": 1, "good": 2, "zzz": 3}
+    m = build_embedding_matrix(vocab, glove, dim=4, seed=42)
+    assert m.shape == (4, 4)
+    assert m.dtype == np.float32
+    assert np.array_equal(m[2], np.array([1, 2, 3, 4], dtype=np.float32))
+    assert not m[0].any()  # pad row is zeros
+    assert m[3].any() and np.abs(m[3]).max() < 1.0  # OOV: small random vector
+
+
+def test_embedding_matrix_deterministic(tmp_path):
+    glove = load_glove(_tiny_glove(tmp_path), dim=4)
+    vocab = {"<pad>": 0, "<unk>": 1, "zzz": 2}
+    a = build_embedding_matrix(vocab, glove, dim=4, seed=7)
+    b = build_embedding_matrix(vocab, glove, dim=4, seed=7)
+    assert np.array_equal(a, b)
