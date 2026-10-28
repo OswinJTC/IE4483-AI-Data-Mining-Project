@@ -231,20 +231,49 @@ def compute_metrics(y_true, y_pred, y_prob) -> dict:
     }
 
 
+def _real_lengths(ids: torch.Tensor) -> torch.Tensor:
+    """Number of non-pad ids per review (at least 1)."""
+    return (ids != 0).sum(dim=1).clamp(min=1)
+
+
+def _bucketed_batches(lengths: torch.Tensor, batch_size: int, chunk_factor: int = 50) -> list[torch.Tensor]:
+    """Shuffle, then sort by length inside large chunks so each batch holds reviews of similar length.
+
+    Short reviews no longer get padded up to the longest review in a random batch, which makes
+    training much faster, while chunks and batch order stay random. Uses the global torch RNG.
+    Example: lengths [5, 90, 7, 88] with batch_size 2 -> batches like [0, 2] and [3, 1].
+    """
+    perm = torch.randperm(len(lengths))
+    batches = []
+    for start in range(0, len(perm), batch_size * chunk_factor):
+        chunk = perm[start : start + batch_size * chunk_factor]
+        chunk = chunk[torch.argsort(lengths[chunk], stable=True)]
+        batches.extend(chunk.split(batch_size))
+    return [batches[i] for i in torch.randperm(len(batches))]
+
+
 @torch.no_grad()
+def _logits(model, ids, dev, batch_size: int = 256) -> torch.Tensor:
+    """Class scores for every review, in the original order, evaluated in length-sorted batches."""
+    x = torch.as_tensor(ids, dtype=torch.long)
+    lengths = _real_lengths(x)
+    order = torch.argsort(lengths)
+    out = torch.empty(len(x), 2)
+    model.to(dev).eval()
+    for i in range(0, len(x), batch_size):
+        idx = order[i : i + batch_size]
+        longest = int(lengths[idx].max())
+        out[idx] = model(x[idx][:, :longest].to(dev)).cpu()  # drop padding beyond the longest real review
+    return out
+
+
 def predict_proba(model, ids, batch_size: int = 256, device: str | None = None) -> np.ndarray:
     """Positive-class probability for each encoded review.
 
     Example: predict_proba(model, X_val) -> array([0.97, 0.03, 0.88, ...]) with one value per review.
     """
-    dev = _pick_device(device)
-    model.to(dev).eval()
-    x = torch.as_tensor(ids, dtype=torch.long)
-    probs = [
-        torch.softmax(model(x[i : i + batch_size].to(dev)), dim=-1)[:, 1].cpu()
-        for i in range(0, len(x), batch_size)
-    ]
-    return torch.cat(probs).numpy()
+    logits = _logits(model, ids, _pick_device(device), batch_size)
+    return torch.softmax(logits, dim=-1)[:, 1].numpy()
 
 
 def train_model(
@@ -262,22 +291,24 @@ def train_model(
     class_weighted: bool = False,
     seed: int = 42,
     device: str | None = None,
+    verbose: bool = False,
 ) -> dict:
     """Train with AdamW; keep the weights with the best validation Negative F1.
 
-    Each epoch: shuffle the training reviews, update the weights batch by batch (clipping gradients so
-    updates stay stable), then score the validation set. If validation Negative F1 has not improved for
-    `patience` epochs, stop and restore the best epoch's weights.
+    Each epoch: build length-bucketed batches, update the weights batch by batch (clipping gradients so
+    updates stay stable), then score the validation set once. If validation Negative F1 has not improved
+    for `patience` epochs, stop and restore the best epoch's weights. verbose=True prints one line per epoch.
     Example result: {"best_epoch": 8, "history": [{"epoch": 1, "train_loss": 0.45, ...}, ...],
                      "metrics": {...}, "train_seconds": 417.0}
-    class_weighted=True weights each class by n / (2 * class_count), so the rare negative class
-    (about 15% of reviews) is penalised ~3x more per mistake than the positive class.
+    class_weighted=True weights each class by n / (2 * class_count): about 3.4 for the rare negative
+    class and 0.59 for the positive class, so a missed negative review costs ~5.9x more.
     """
     set_seed(seed)
     dev = _pick_device(device)
     model.to(dev)
     x = torch.as_tensor(train_ids, dtype=torch.long)
     y = torch.as_tensor(train_y, dtype=torch.long)
+    lengths = _real_lengths(x)
     weight = None
     if class_weighted:
         counts = torch.bincount(y, minlength=2).float()
@@ -285,28 +316,24 @@ def train_model(
     loss_fn = nn.CrossEntropyLoss(weight=weight)
     plain_loss_fn = nn.CrossEntropyLoss()  # val loss stays comparable across weighting choices
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
-    val_x = torch.as_tensor(val_ids, dtype=torch.long)
     val_t = torch.as_tensor(val_y, dtype=torch.long)
 
     history, best_f1, best_epoch, best_state, stale = [], -1.0, 0, None, 0
     start = time.time()
     for epoch in range(1, max_epochs + 1):
         model.train()
-        order = torch.randperm(len(x))
         total = 0.0
-        for i in range(0, len(x), batch_size):
-            idx = order[i : i + batch_size]
+        for idx in _bucketed_batches(lengths, batch_size):
+            longest = int(lengths[idx].max())
             optimizer.zero_grad()
-            loss = loss_fn(model(x[idx].to(dev)), y[idx].to(dev))
+            loss = loss_fn(model(x[idx][:, :longest].to(dev)), y[idx].to(dev))
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step()
             total += loss.item() * len(idx)
-        probs = predict_proba(model, val_ids, device=str(dev))
-        with torch.no_grad():
-            model.eval()
-            logits = torch.cat([model(val_x[i : i + 256].to(dev)).cpu() for i in range(0, len(val_x), 256)])
-            val_loss = plain_loss_fn(logits, val_t).item()
+        logits = _logits(model, val_ids, dev)  # one validation pass gives both loss and probabilities
+        probs = torch.softmax(logits, dim=-1)[:, 1].numpy()
+        val_loss = plain_loss_fn(logits, val_t).item()
         m = compute_metrics(val_y, (probs >= 0.5).astype(int), probs)
         history.append({
             "epoch": epoch,
@@ -315,6 +342,9 @@ def train_model(
             "val_neg_f1": m["neg_f1"],
             "val_acc": m["accuracy"],
         })
+        if verbose:
+            print(f"  epoch {epoch}/{max_epochs}  train_loss {history[-1]['train_loss']:.4f}  "
+                  f"val_loss {val_loss:.4f}  val_negF1 {m['neg_f1']:.4f}  ({time.time() - start:.0f}s)", flush=True)
         if m["neg_f1"] > best_f1:
             best_f1, best_epoch, stale = m["neg_f1"], epoch, 0
             best_state = copy.deepcopy(model.state_dict())

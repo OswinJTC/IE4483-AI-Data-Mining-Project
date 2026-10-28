@@ -237,3 +237,44 @@ def test_finetuning_does_not_mutate_callers_embedding_matrix():
     train_model(model, ids, y, ids, y, lr=0.05, batch_size=16, max_epochs=2, patience=2,
                 seed=1, device="cpu")
     assert np.array_equal(emb, original)
+
+
+# ---- Stage 2 work: length bucketing, single validation pass, progress logging ----
+from src.glove_bilstm import _bucketed_batches
+
+
+def test_bucketed_batches_cover_every_index_once():
+    set_seed(0)
+    lengths = torch.randint(1, 150, (1000,))
+    batches = _bucketed_batches(lengths, batch_size=64)
+    seen = torch.cat(batches).sort().values
+    assert torch.equal(seen, torch.arange(1000))
+    assert all(len(b) <= 64 for b in batches)
+
+
+def test_bucketed_batches_group_similar_lengths():
+    set_seed(0)
+    lengths = torch.randint(1, 150, (2000,))
+    batches = _bucketed_batches(lengths, batch_size=32)
+    bucketed = np.mean([int(lengths[b].max() - lengths[b].min()) for b in batches])
+    random_batches = torch.randperm(2000).split(32)
+    plain = np.mean([int(lengths[b].max() - lengths[b].min()) for b in random_batches])
+    assert bucketed < plain / 2
+
+
+def test_predict_proba_keeps_order_and_matches_single_reviews():
+    set_seed(0)
+    model = BiLSTMClassifier(_matrix(), hidden=6, pooling="attention").eval()
+    ids = [[2, 3, 4] + [0] * 7, [5] * 10, [6, 7] + [0] * 8, [8, 9, 2, 3, 4, 5] + [0] * 4]
+    batch = predict_proba(model, ids, batch_size=2, device="cpu")
+    single = [predict_proba(model, [r], batch_size=1, device="cpu")[0] for r in ids]
+    assert np.allclose(batch, single, atol=1e-5)
+
+
+def test_train_model_verbose_prints_one_line_per_epoch(capsys):
+    ids, y = _toy_data()
+    model = BiLSTMClassifier(_matrix(vocab_size=9), hidden=4)
+    res = train_model(model, ids, y, ids, y, lr=0.01, batch_size=16, max_epochs=3, patience=3,
+                      seed=1, device="cpu", verbose=True)
+    lines = [l for l in capsys.readouterr().out.splitlines() if "epoch" in l]
+    assert len(lines) == len(res["history"])
