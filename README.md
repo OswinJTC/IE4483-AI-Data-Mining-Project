@@ -74,6 +74,6 @@ To ensure a fair comparison, all three models should report consistent metrics.
 
 ## 5. Project Status
 
-**Experiments in progress.** Data preparation is done. Final metrics and visualizations will be updated after model evaluation is completed.
+**Experiments in progress.** Data preparation is done, and the GloVe + BiLSTM model (`02_GloVe_BiLSTM.ipynb`) has been run on the validation set: best configuration (fine-tuned GloVe, attention pooling) reaches about 91.3% accuracy and 0.70 Negative F1 over 3 seeds. These validation scores were also used for model selection, so treat them as optimistic. Final metrics and visualizations will be updated after model evaluation is completed.
 
 The best-performing model will generate the final `submission.csv`.
