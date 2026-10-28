@@ -87,3 +87,48 @@ def test_embedding_matrix_deterministic(tmp_path):
     a = build_embedding_matrix(vocab, glove, dim=4, seed=7)
     b = build_embedding_matrix(vocab, glove, dim=4, seed=7)
     assert np.array_equal(a, b)
+
+
+# ---- Task 3: BiLSTM model ----
+import torch
+
+from src.glove_bilstm import BiLSTMClassifier
+
+
+def _matrix(vocab_size=20, dim=8):
+    rng = np.random.default_rng(0)
+    m = rng.normal(size=(vocab_size, dim)).astype(np.float32)
+    m[0] = 0
+    return m
+
+
+@pytest.mark.parametrize("pooling", ["attention", "max", "last"])
+@pytest.mark.parametrize("bidirectional", [True, False])
+def test_forward_shape(pooling, bidirectional):
+    model = BiLSTMClassifier(_matrix(), hidden=6, pooling=pooling, bidirectional=bidirectional)
+    ids = torch.tensor([[2, 3, 4, 0, 0], [5, 6, 7, 8, 9]])
+    assert model(ids).shape == (2, 2)
+
+
+@pytest.mark.parametrize("pooling", ["attention", "max"])
+def test_padding_does_not_change_logits(pooling):
+    torch.manual_seed(0)
+    model = BiLSTMClassifier(_matrix(), hidden=6, pooling=pooling).eval()
+    short = torch.tensor([[2, 3, 4] + [0] * 7])
+    long = torch.tensor([[2, 3, 4] + [0] * 17])
+    with torch.no_grad():
+        assert torch.allclose(model(short), model(long), atol=1e-5)
+
+
+def test_frozen_embeddings_have_no_grad():
+    frozen = BiLSTMClassifier(_matrix(), freeze_embeddings=True)
+    tuned = BiLSTMClassifier(_matrix(), freeze_embeddings=False)
+    assert not frozen.embedding.weight.requires_grad
+    assert tuned.embedding.weight.requires_grad
+
+
+@pytest.mark.parametrize("pooling", ["attention", "max", "last"])
+def test_all_pad_row_no_nan(pooling):
+    model = BiLSTMClassifier(_matrix(), hidden=6, pooling=pooling).eval()
+    out = model(torch.zeros(2, 5, dtype=torch.long))
+    assert torch.isfinite(out).all()

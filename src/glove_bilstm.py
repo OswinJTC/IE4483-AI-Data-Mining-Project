@@ -7,6 +7,9 @@ import zipfile
 from collections import Counter
 
 import numpy as np
+import torch
+from torch import nn
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 PAD, UNK = "<pad>", "<unk>"
 _TOKEN_RE = re.compile(r"[a-z0-9']+|[^\sa-z0-9']")
@@ -83,3 +86,57 @@ def build_embedding_matrix(
             matrix[idx] = glove[tok]
     matrix[vocab[PAD]] = 0.0
     return matrix
+
+
+class BiLSTMClassifier(nn.Module):
+    """Embedding -> (Bi)LSTM -> pooling -> Linear. Pad id 0 is masked everywhere it matters."""
+
+    def __init__(
+        self,
+        embedding_matrix: np.ndarray,
+        hidden: int = 128,
+        layers: int = 1,
+        dropout: float = 0.4,
+        pooling: str = "attention",
+        bidirectional: bool = True,
+        freeze_embeddings: bool = True,
+    ):
+        super().__init__()
+        if pooling not in {"attention", "max", "last"}:
+            raise ValueError(f"unknown pooling: {pooling}")
+        self.pooling = pooling
+        self.bidirectional = bidirectional
+        self.embedding = nn.Embedding.from_pretrained(
+            torch.as_tensor(embedding_matrix), freeze=freeze_embeddings, padding_idx=0
+        )
+        self.lstm = nn.LSTM(
+            embedding_matrix.shape[1],
+            hidden,
+            num_layers=layers,
+            batch_first=True,
+            bidirectional=bidirectional,
+            dropout=dropout if layers > 1 else 0.0,
+        )
+        out_dim = hidden * (2 if bidirectional else 1)
+        self.attention = nn.Linear(out_dim, 1)
+        self.dropout = nn.Dropout(dropout)
+        self.classifier = nn.Linear(out_dim, 2)
+
+    def forward(self, ids: torch.Tensor) -> torch.Tensor:
+        seq_len = ids.shape[1]
+        lengths = (ids != 0).sum(dim=1).clamp(min=1)  # all-pad rows behave as length 1
+        mask = torch.arange(seq_len, device=ids.device)[None, :] < lengths[:, None]
+        packed = pack_padded_sequence(
+            self.embedding(ids), lengths.cpu(), batch_first=True, enforce_sorted=False
+        )
+        packed_out, (h_n, _) = self.lstm(packed)
+        out, _ = pad_packed_sequence(packed_out, batch_first=True, total_length=seq_len)
+
+        if self.pooling == "attention":
+            scores = self.attention(out).squeeze(-1).masked_fill(~mask, float("-inf"))
+            pooled = (torch.softmax(scores, dim=1).unsqueeze(-1) * out).sum(dim=1)
+        elif self.pooling == "max":
+            pooled = out.masked_fill(~mask.unsqueeze(-1), float("-inf")).max(dim=1).values
+        else:  # last real position of each direction
+            pooled = torch.cat([h_n[-2], h_n[-1]], dim=1) if self.bidirectional else h_n[-1]
+        return self.classifier(self.dropout(pooled))
