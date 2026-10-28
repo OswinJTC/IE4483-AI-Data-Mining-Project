@@ -225,3 +225,15 @@ def test_best_epoch_weights_are_restored_when_best_is_not_last(monkeypatch):
     assert len(res["history"]) == 3  # stopped early: epoch 1 best, then 2 stale epochs
     for key, value in model.state_dict().items():
         assert torch.equal(value, snapshots[0][key]), f"{key} not restored to epoch 1"
+
+
+def test_finetuning_does_not_mutate_callers_embedding_matrix():
+    """Fine-tuned embeddings must be a private copy: reusing one matrix for many runs
+    must start each run from the same pretrained vectors."""
+    emb = _matrix(vocab_size=9)
+    original = emb.copy()
+    ids, y = _toy_data()
+    model = BiLSTMClassifier(emb, hidden=4, freeze_embeddings=False)
+    train_model(model, ids, y, ids, y, lr=0.05, batch_size=16, max_epochs=2, patience=2,
+                seed=1, device="cpu")
+    assert np.array_equal(emb, original)

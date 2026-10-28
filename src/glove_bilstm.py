@@ -149,7 +149,7 @@ class BiLSTMClassifier(nn.Module):
         self.pooling = pooling
         self.bidirectional = bidirectional
         self.embedding = nn.Embedding.from_pretrained(
-            torch.as_tensor(embedding_matrix), freeze=freeze_embeddings, padding_idx=0
+            torch.tensor(embedding_matrix), freeze=freeze_embeddings, padding_idx=0
         )
         self.lstm = nn.LSTM(
             embedding_matrix.shape[1],
