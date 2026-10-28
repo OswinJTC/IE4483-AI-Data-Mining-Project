@@ -194,3 +194,34 @@ def test_early_stopping_restores_best():
 def test_train_model_class_weighted_runs():
     _, _, _, res = _run_toy(class_weighted=True)
     assert 0.0 <= res["metrics"]["neg_f1"] <= 1.0
+
+
+def test_best_epoch_weights_are_restored_when_best_is_not_last(monkeypatch):
+    """Epoch 1 scores best, later epochs score worse: training must stop early and
+    the final model must hold the epoch-1 weights, not the last epoch's."""
+    import copy
+
+    import src.glove_bilstm as mod
+
+    set_seed(42)
+    ids, y = _toy_data()
+    model = BiLSTMClassifier(_matrix(vocab_size=9), hidden=8, freeze_embeddings=False)
+    snapshots, calls = [], {"n": 0}
+    real = mod.compute_metrics
+
+    def scripted(y_true, y_pred, y_prob):
+        m = real(y_true, y_pred, y_prob)
+        calls["n"] += 1
+        if calls["n"] <= 3:  # one call per epoch while training
+            snapshots.append(copy.deepcopy(model.state_dict()))
+            m["neg_f1"] = 0.9 if calls["n"] == 1 else 0.1
+        return m
+
+    monkeypatch.setattr(mod, "compute_metrics", scripted)
+    res = train_model(model, ids, y, ids, y, lr=0.05, batch_size=16, max_epochs=10, patience=2,
+                      seed=42, device="cpu")
+
+    assert res["best_epoch"] == 1
+    assert len(res["history"]) == 3  # stopped early: epoch 1 best, then 2 stale epochs
+    for key, value in model.state_dict().items():
+        assert torch.equal(value, snapshots[0][key]), f"{key} not restored to epoch 1"
