@@ -1,14 +1,25 @@
 """GloVe + BiLSTM sentiment classifier: data, vocabulary, embeddings, model, training, metrics."""
 import json
+import copy
 import os
+import random
 import re
 import subprocess
+import time
 import zipfile
 from collections import Counter
 
 import numpy as np
 import torch
 from torch import nn
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 PAD, UNK = "<pad>", "<unk>"
@@ -140,3 +151,126 @@ class BiLSTMClassifier(nn.Module):
         else:  # last real position of each direction
             pooled = torch.cat([h_n[-2], h_n[-1]], dim=1) if self.bidirectional else h_n[-1]
         return self.classifier(self.dropout(pooled))
+
+
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def _pick_device(device: str | None) -> torch.device:
+    if device:
+        return torch.device(device)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def compute_metrics(y_true, y_pred, y_prob) -> dict:
+    """Positive class = 1. Negative F1 is the F1 of class 0; undefined scores count as 0."""
+    y_true, y_pred, y_prob = np.asarray(y_true), np.asarray(y_pred), np.asarray(y_prob)
+    return {
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "neg_f1": float(f1_score(y_true, y_pred, pos_label=0, zero_division=0)),
+        "pr_auc": float(average_precision_score(y_true, y_prob)) if len(set(y_true)) > 1 else 0.0,
+        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist(),
+    }
+
+
+@torch.no_grad()
+def predict_proba(model, ids, batch_size: int = 256, device: str | None = None) -> np.ndarray:
+    """Positive-class probability for each encoded review."""
+    dev = _pick_device(device)
+    model.to(dev).eval()
+    x = torch.as_tensor(ids, dtype=torch.long)
+    probs = [
+        torch.softmax(model(x[i : i + batch_size].to(dev)), dim=-1)[:, 1].cpu()
+        for i in range(0, len(x), batch_size)
+    ]
+    return torch.cat(probs).numpy()
+
+
+def train_model(
+    model,
+    train_ids,
+    train_y,
+    val_ids,
+    val_y,
+    *,
+    lr: float = 1e-3,
+    batch_size: int = 64,
+    max_epochs: int = 15,
+    patience: int = 3,
+    clip: float = 1.0,
+    class_weighted: bool = False,
+    seed: int = 42,
+    device: str | None = None,
+) -> dict:
+    """Train with AdamW; keep the weights with the best validation Negative F1."""
+    set_seed(seed)
+    dev = _pick_device(device)
+    model.to(dev)
+    x = torch.as_tensor(train_ids, dtype=torch.long)
+    y = torch.as_tensor(train_y, dtype=torch.long)
+    weight = None
+    if class_weighted:
+        counts = torch.bincount(y, minlength=2).float()
+        weight = (counts.sum() / (2.0 * counts.clamp(min=1))).to(dev)
+    loss_fn = nn.CrossEntropyLoss(weight=weight)
+    plain_loss_fn = nn.CrossEntropyLoss()  # val loss stays comparable across weighting choices
+    optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=lr)
+    val_x = torch.as_tensor(val_ids, dtype=torch.long)
+    val_t = torch.as_tensor(val_y, dtype=torch.long)
+
+    history, best_f1, best_epoch, best_state, stale = [], -1.0, 0, None, 0
+    start = time.time()
+    for epoch in range(1, max_epochs + 1):
+        model.train()
+        order = torch.randperm(len(x))
+        total = 0.0
+        for i in range(0, len(x), batch_size):
+            idx = order[i : i + batch_size]
+            optimizer.zero_grad()
+            loss = loss_fn(model(x[idx].to(dev)), y[idx].to(dev))
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), clip)
+            optimizer.step()
+            total += loss.item() * len(idx)
+        probs = predict_proba(model, val_ids, device=str(dev))
+        with torch.no_grad():
+            model.eval()
+            logits = torch.cat([model(val_x[i : i + 256].to(dev)).cpu() for i in range(0, len(val_x), 256)])
+            val_loss = plain_loss_fn(logits, val_t).item()
+        m = compute_metrics(val_y, (probs >= 0.5).astype(int), probs)
+        history.append({
+            "epoch": epoch,
+            "train_loss": total / len(x),
+            "val_loss": val_loss,
+            "val_neg_f1": m["neg_f1"],
+            "val_acc": m["accuracy"],
+        })
+        if m["neg_f1"] > best_f1:
+            best_f1, best_epoch, stale = m["neg_f1"], epoch, 0
+            best_state = copy.deepcopy(model.state_dict())
+        else:
+            stale += 1
+            if stale >= patience:
+                break
+    train_seconds = time.time() - start
+
+    model.load_state_dict(best_state)
+    probs = predict_proba(model, val_ids, device=str(dev))
+    return {
+        "history": history,
+        "best_epoch": best_epoch,
+        "train_seconds": train_seconds,
+        "metrics": compute_metrics(val_y, (probs >= 0.5).astype(int), probs),
+    }
