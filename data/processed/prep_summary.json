@@ -1,0 +1,17 @@
+{
+  "seed": 42,
+  "train_ratio": 0.85,
+  "raw_train_rows": 7401,
+  "dropped_empty": 0,
+  "dropped_conflicting": 0,
+  "dropped_duplicates": 219,
+  "clean_rows": 7182,
+  "train_rows": 6104,
+  "val_rows": 1078,
+  "test_rows": 1851,
+  "positive_ratio": {
+    "clean": 0.8541,
+    "train": 0.854,
+    "val": 0.8544
+  }
+}
