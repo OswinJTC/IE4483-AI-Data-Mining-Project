@@ -1,6 +1,7 @@
 """GloVe + BiLSTM sentiment classifier: data, vocabulary, embeddings, model, training, metrics."""
 import json
 import copy
+import math
 import os
 import random
 import re
@@ -362,3 +363,37 @@ def train_model(
         "train_seconds": train_seconds,
         "metrics": compute_metrics(val_y, (probs >= 0.5).astype(int), probs),
     }
+
+
+def sample_configs(space: dict, n: int, seed: int = 42, max_tries: int = 10_000) -> list[dict]:
+    """Draw n distinct random hyperparameter configurations (random search).
+
+    `space` maps a setting name to one of:
+      - a list, e.g. [64, 128, 256]            -> one of the values, uniformly
+      - ("uniform", low, high)                 -> a float, uniform, rounded to 2 decimals
+      - ("loguniform", low, high)              -> a float, uniform on a log scale (3 significant digits)
+    Log-uniform suits learning rates, where 1e-4 vs 1e-3 matters as much as 1e-3 vs 1e-2.
+    The same seed always gives the same list. Example:
+        sample_configs({"hidden": [64, 128], "lr": ("loguniform", 3e-4, 1e-2)}, 2, seed=1)
+        -> [{"hidden": 128, "lr": 0.00245}, {"hidden": 64, "lr": 0.000533}]   (values illustrative)
+    """
+    rng = random.Random(seed)
+    configs, seen = [], set()
+    for _ in range(max_tries):
+        if len(configs) == n:
+            break
+        cfg = {}
+        for name, spec in space.items():
+            if isinstance(spec, list):
+                cfg[name] = rng.choice(spec)
+            elif spec[0] == "uniform":
+                cfg[name] = round(rng.uniform(spec[1], spec[2]), 2)
+            elif spec[0] == "loguniform":
+                cfg[name] = float(f"{math.exp(rng.uniform(math.log(spec[1]), math.log(spec[2]))):.3g}")
+            else:
+                raise ValueError(f"unknown search spec for {name!r}: {spec!r}")
+        key = json.dumps(cfg, sort_keys=True)
+        if key not in seen:
+            seen.add(key)
+            configs.append(cfg)
+    return configs

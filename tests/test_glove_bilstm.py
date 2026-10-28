@@ -278,3 +278,43 @@ def test_train_model_verbose_prints_one_line_per_epoch(capsys):
                       seed=1, device="cpu", verbose=True)
     lines = [l for l in capsys.readouterr().out.splitlines() if "epoch" in l]
     assert len(lines) == len(res["history"])
+
+
+# ---- Random search sampler ----
+import math
+
+from src.glove_bilstm import sample_configs
+
+SPACE = {
+    "hidden": [64, 128, 256],
+    "lr": ("loguniform", 3e-4, 1e-2),
+    "dropout": ("uniform", 0.2, 0.6),
+}
+
+
+def test_sample_configs_is_deterministic_and_unique():
+    a = sample_configs(SPACE, 8, seed=1)
+    b = sample_configs(SPACE, 8, seed=1)
+    assert a == b
+    assert len(a) == 8
+    assert len({json.dumps(c, sort_keys=True) for c in a}) == 8
+    assert a != sample_configs(SPACE, 8, seed=2)
+
+
+def test_sample_configs_respects_ranges_and_choices():
+    for cfg in sample_configs(SPACE, 50, seed=3):
+        assert cfg["hidden"] in (64, 128, 256)
+        assert 3e-4 <= cfg["lr"] <= 1e-2
+        assert 0.2 <= cfg["dropout"] <= 0.6
+
+
+def test_loguniform_spreads_across_orders_of_magnitude():
+    lrs = [c["lr"] for c in sample_configs(SPACE, 200, seed=4)]
+    # a log-uniform sample puts about half the draws below the geometric midpoint (~1.7e-3)
+    below = sum(lr < math.sqrt(3e-4 * 1e-2) for lr in lrs) / len(lrs)
+    assert 0.35 < below < 0.65
+
+
+def test_sample_configs_rejects_unknown_spec():
+    with pytest.raises(ValueError):
+        sample_configs({"x": ("cauchy", 1, 2)}, 2)
