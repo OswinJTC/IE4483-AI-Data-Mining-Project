@@ -1,0 +1,22 @@
+{
+  "Model": "Run_07_Dropout_03",
+  "LR": 3e-05,
+  "Epochs": 5,
+  "Batch": 32,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.3,
+  "Weight Decay": 0.01,
+  "Early Stopping": false,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9813237221494102,
+  "Validation Accuracy": 0.9536178107606679,
+  "Precision": 0.9780461031833151,
+  "Recall": 0.9674267100977199,
+  "F1": 0.972707423580786,
+  "Negative F1": 0.845679012345679,
+  "Macro F1": 0.9091932179632325,
+  "Negative Recall": 0.8726114649681529,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_07_Dropout_03/checkpoint-573",
+  "Time (min)": 12.9
+}

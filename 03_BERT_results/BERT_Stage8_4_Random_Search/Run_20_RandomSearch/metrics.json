@@ -1,0 +1,22 @@
+{
+  "Model": "Run_20_RandomSearch",
+  "LR": 3.839700321074557e-05,
+  "Epochs": 8,
+  "Batch": 32,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.3271741608289302,
+  "Weight Decay": 0.0651639258247452,
+  "Early Stopping": true,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9904980340760158,
+  "Validation Accuracy": 0.9564007421150278,
+  "Precision": 0.9678800856531049,
+  "Recall": 0.9815418023887079,
+  "F1": 0.9746630727762803,
+  "Negative F1": 0.8438538205980066,
+  "Macro F1": 0.9092584466871434,
+  "Negative Recall": 0.8089171974522293,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_20_RandomSearch/checkpoint-955",
+  "Time (min)": 21.81
+}

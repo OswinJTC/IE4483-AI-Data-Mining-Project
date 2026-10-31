@@ -1,0 +1,22 @@
+{
+  "Model": "Run_08_WeightDecay_005",
+  "LR": 3e-05,
+  "Epochs": 5,
+  "Batch": 32,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.3,
+  "Weight Decay": 0.05,
+  "Early Stopping": false,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9824705111402359,
+  "Validation Accuracy": 0.9554730983302412,
+  "Precision": 0.9770491803278688,
+  "Recall": 0.9706840390879479,
+  "F1": 0.9738562091503268,
+  "Negative F1": 0.85,
+  "Macro F1": 0.9119281045751634,
+  "Negative Recall": 0.8662420382165605,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_08_WeightDecay_005/checkpoint-573",
+  "Time (min)": 13.61
+}

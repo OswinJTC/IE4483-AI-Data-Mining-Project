@@ -1,0 +1,22 @@
+{
+  "Model": "Run_09_Frozen_6",
+  "LR": 3e-05,
+  "Epochs": 5,
+  "Batch": 32,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.3,
+  "Weight Decay": 0.05,
+  "Early Stopping": false,
+  "Frozen Layers": 6,
+  "Train Accuracy": 0.971002621231979,
+  "Validation Accuracy": 0.9564007421150278,
+  "Precision": 0.9802197802197802,
+  "Recall": 0.9685124864277959,
+  "F1": 0.9743309666848716,
+  "Negative F1": 0.8553846153846154,
+  "Macro F1": 0.9148577910347435,
+  "Negative Recall": 0.8853503184713376,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_09_Frozen_6/checkpoint-573",
+  "Time (min)": 12.57
+}

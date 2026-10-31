@@ -1,0 +1,22 @@
+{
+  "Model": "Run_11_Seed_43",
+  "LR": 3e-05,
+  "Epochs": 8,
+  "Batch": 32,
+  "Seed": 43,
+  "Optimizer": "AdamW",
+  "Dropout": 0.3,
+  "Weight Decay": 0.05,
+  "Early Stopping": true,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9937745740498034,
+  "Validation Accuracy": 0.9536178107606679,
+  "Precision": 0.9749182115594329,
+  "Recall": 0.9706840390879479,
+  "F1": 0.9727965179542981,
+  "Negative F1": 0.8427672955974843,
+  "Macro F1": 0.9077819067758912,
+  "Negative Recall": 0.8535031847133758,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_11_Seed_43/checkpoint-1337",
+  "Time (min)": 25.99
+}

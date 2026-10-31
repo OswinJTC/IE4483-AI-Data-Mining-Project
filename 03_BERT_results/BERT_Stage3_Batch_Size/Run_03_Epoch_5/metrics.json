@@ -1,0 +1,22 @@
+{
+  "Model": "Run_03_Epoch_5",
+  "LR": 3e-05,
+  "Epochs": 5,
+  "Batch": 16,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.1,
+  "Weight Decay": 0.01,
+  "Early Stopping": false,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9980340760157274,
+  "Validation Accuracy": 0.9545454545454546,
+  "Precision": 0.9688172043010753,
+  "Recall": 0.9782844733984799,
+  "F1": 0.9735278227984873,
+  "Negative F1": 0.839344262295082,
+  "Macro F1": 0.9064360425467846,
+  "Negative Recall": 0.8152866242038217,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_03_Epoch_5/checkpoint-1528",
+  "Time (min)": 12.47
+}

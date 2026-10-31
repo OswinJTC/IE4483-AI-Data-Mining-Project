@@ -1,0 +1,22 @@
+{
+  "Model": "Run_15_GridSearch",
+  "LR": 3.5e-05,
+  "Epochs": 8,
+  "Batch": 32,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.2,
+  "Weight Decay": 0.05,
+  "Early Stopping": true,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9859108781127129,
+  "Validation Accuracy": 0.9489795918367347,
+  "Precision": 0.9747807017543859,
+  "Recall": 0.9652551574375678,
+  "F1": 0.9699945444626296,
+  "Negative F1": 0.8297213622291022,
+  "Macro F1": 0.8998579533458659,
+  "Negative Recall": 0.8535031847133758,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_15_GridSearch/checkpoint-382",
+  "Time (min)": 10.74
+}

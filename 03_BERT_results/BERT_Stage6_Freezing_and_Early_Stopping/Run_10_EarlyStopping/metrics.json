@@ -1,0 +1,22 @@
+{
+  "Model": "Run_10_EarlyStopping",
+  "LR": 3e-05,
+  "Epochs": 8,
+  "Batch": 32,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.3,
+  "Weight Decay": 0.05,
+  "Early Stopping": true,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9927916120576671,
+  "Validation Accuracy": 0.9601113172541744,
+  "Precision": 0.9700214132762313,
+  "Recall": 0.9837133550488599,
+  "F1": 0.9768194070080862,
+  "Negative F1": 0.8571428571428571,
+  "Macro F1": 0.9169811320754717,
+  "Negative Recall": 0.821656050955414,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_10_EarlyStopping/checkpoint-955",
+  "Time (min)": 20.78
+}

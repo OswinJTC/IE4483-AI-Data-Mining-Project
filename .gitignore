@@ -4,3 +4,31 @@ __pycache__/
 .ipynb_checkpoints/
 .venv/
 .superpowers/
+
+# BERT experiment artifacts only. Keep stage notebooks, metrics, configs,
+# comparison tables, training histories, predictions, figures and reports.
+/03_BERT_results/**/checkpoint-*/
+/03_BERT_results/**/best_model/
+
+# Model weights / training state saved outside the usual model directories.
+/03_BERT_results/**/*.safetensors
+/03_BERT_results/**/*.bin
+/03_BERT_results/**/*.pt
+/03_BERT_results/**/*.pth
+
+# Local caches, report-rendering scratch files and full experiment archives.
+/03_BERT_results/**/.cache/
+/03_BERT_results/**/runs/
+/03_BERT_results/**/wandb/
+/03_BERT_results/tmp/
+/03_BERT_results/**/*.zip
+
+# These are identical to the shared files in data/processed/.
+/03_BERT_results/train_split.json
+/03_BERT_results/val_split.json
+/03_BERT_results/test_split.json
+
+# Local desktop metadata and ad hoc screenshots.
+/.DS_Store
+/03_BERT_results/**/.DS_Store
+/03_BERT_results/Screenshot*.png

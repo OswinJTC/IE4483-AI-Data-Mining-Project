@@ -1,0 +1,22 @@
+{
+  "Model": "Run_04_LR_2e5",
+  "LR": 2e-05,
+  "Epochs": 5,
+  "Batch": 16,
+  "Seed": 42,
+  "Optimizer": "AdamW",
+  "Dropout": 0.1,
+  "Weight Decay": 0.01,
+  "Early Stopping": false,
+  "Frozen Layers": 0,
+  "Train Accuracy": 0.9986893840104849,
+  "Validation Accuracy": 0.9526901669758813,
+  "Precision": 0.9637526652452025,
+  "Recall": 0.9815418023887079,
+  "F1": 0.9725658956428187,
+  "Negative F1": 0.8282828282828283,
+  "Macro F1": 0.9004243619628235,
+  "Negative Recall": 0.7834394904458599,
+  "Best Epoch": "/content/IE4483_BERT/negative_f1/Run_04_LR_2e5/checkpoint-1910",
+  "Time (min)": 14.25
+}

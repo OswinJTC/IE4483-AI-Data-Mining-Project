@@ -1,0 +1,11 @@
+{
+  "lr": 3.839700321074557e-05,
+  "epochs": 8,
+  "batch": 32,
+  "seed": 42,
+  "optimizer": "AdamW",
+  "dropout": 0.3271741608289302,
+  "weight_decay": 0.0651639258247452,
+  "early_stopping": true,
+  "frozen_layers": 0
+}
