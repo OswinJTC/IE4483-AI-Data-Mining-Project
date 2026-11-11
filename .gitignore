@@ -32,3 +32,10 @@ __pycache__/
 /.DS_Store
 /03_BERT_results/**/.DS_Store
 /03_BERT_results/Screenshot*.png
+
+# Local Groq credentials
+/.groq_keys
+/nov_10_groq_experiment.py
+
+# Local GPT-OSS resume files
+/03_BERT_results/BERT_Extra_GPT_OSS_Evaluation/**/.*_progress.*

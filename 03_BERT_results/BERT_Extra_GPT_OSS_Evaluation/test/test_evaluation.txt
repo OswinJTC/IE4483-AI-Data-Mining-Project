@@ -1,0 +1,12 @@
+BERT Run 10 vs. GPT-OSS 120B pseudo-labels
+1,851 test reviews; text and row order verified.
+Reference: GPT-OSS 120B pseudo-labels (not human ground truth).
+
+Accuracy against pseudo-labels: 95.30% (1,764/1,851)
+Negative F1: 0.8455
+Disagreements: 87
+
+Confusion matrix (rows: GPT-OSS; columns: BERT)
+                   BERT 0  BERT 1
+GPT-OSS 0 (Negative)   238      71
+GPT-OSS 1 (Positive)    16    1526
