@@ -1,9 +1,9 @@
 """IE4483 sentiment analysis: four traditional machine-learning method families.
 
 Run from the project root (the directory containing data/processed/):
-    python Traditional_ML_all_4_methods_clean.py
+    python 01_Traditional_ML_results/Traditional_ML_baselines.py
 
-Compares models using your group's ORIGINAL training/validation split:
+Compares four classifier families on the shared train/validation split:
     1. TF-IDF + Logistic Regression
     2. TF-IDF + Linear SVM
     3. TF-IDF + Multinomial Naive Bayes
@@ -14,7 +14,7 @@ Also compares default vs tuned Naive Bayes using a small validation grid.
 Output: confusion-matrix PNG for each configuration and one model_comparison.csv.
 No individual validation prediction files or Naive Bayes tuning CSV are saved.
 
-TF-IDF, SVD and classifier fitting use TRAINING data only.
+TF-IDF, SVD and the classifiers are fitted on the training split.
 No test-set labels or scores are inferred.
 """
 from pathlib import Path
@@ -39,10 +39,10 @@ from sklearn.svm import LinearSVC
 
 
 DATA_DIR = Path('data/processed')
-OUTPUT_DIR = Path('basic_ml_results')
+OUTPUT_DIR = Path('01_Traditional_ML_results')
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# 1. Load the exact shared train/validation split used by the group.
+# Load the shared train and validation splits.
 train = pd.read_json(DATA_DIR / 'train_split.json')
 val = pd.read_json(DATA_DIR / 'val_split.json')
 train_reviews = train['reviews'].fillna('').astype(str)
@@ -52,8 +52,7 @@ y_val = val['sentiments'].astype(int)
 print(f'Train: {len(train):,} reviews | Validation: {len(val):,} reviews')
 print('Class counts (training):', y_train.value_counts().sort_index().to_dict())
 
-# 2. Same TF-IDF configuration for all four methods.
-# IMPORTANT: fit only on training reviews; never fit on validation reviews.
+# Fit the shared TF-IDF vectorizer on the training reviews.
 tfidf = TfidfVectorizer(
     lowercase=True,
     ngram_range=(1, 2),
@@ -68,10 +67,9 @@ X_val = tfidf.transform(val_reviews)
 print('TF-IDF train matrix:', X_train.shape)
 print(f'TF-IDF fit/transform training time: {tfidf_fit_seconds:.3f} seconds')
 
-# 3. Search a few Naive Bayes settings on the validation split.
-# For this imbalanced dataset, default class priors can make NB predict only Positive.
-# We report BOTH default and tuned NB. Selecting on validation makes reported
-# "best validation" scores somewhat optimistic; don't tune on the unlabeled test.
+# Tune Naive Bayes by validation Negative F1.
+# Learned class priors can favor the majority class. The tuned model's validation
+# score can be optimistic because the same split is used for selection.
 nb_search_rows = []
 for fit_prior in [True, False]:
     for alpha in [0.01, 0.1, 0.5, 1.0, 2.0]:
@@ -91,9 +89,7 @@ nb_best_alpha = float(nb_best['alpha'])
 nb_best_fit_prior = bool(nb_best['fit_prior'])
 print(f'NB best on validation: alpha={nb_best_alpha}, fit_prior={nb_best_fit_prior}')
 
-# 4. Compare four method families, including both default and tuned NB.
-# SVD must be trained inside the pipeline, on training data only.
-# MultinomialNB expects NON-NEGATIVE features, so use raw TF-IDF (not SVD).
+# MultinomialNB uses TF-IDF directly because SVD can produce negative features.
 models = {
     'Logistic Regression': LogisticRegression(
         C=10, class_weight='balanced', max_iter=2000, random_state=42,
@@ -112,7 +108,7 @@ models = {
     ),
 }
 
-# 5. Evaluate consistently on the shared validation split.
+# Evaluate on the shared validation split.
 results = []
 for model_name, model in models.items():
     start = perf_counter()
@@ -143,7 +139,7 @@ for model_name, model in models.items():
     plt.close()
     print(f'Saved confusion matrix: {filename}_confusion_matrix.png')
 
-# 6. Save comparison table for your report.
+# Save validation metrics sorted by Negative F1.
 comparison = pd.DataFrame(results).sort_values('Negative F1', ascending=False)
 comparison.to_csv(OUTPUT_DIR / 'model_comparison.csv', index=False)
 print('\n=== All model configurations — validation comparison ===')
